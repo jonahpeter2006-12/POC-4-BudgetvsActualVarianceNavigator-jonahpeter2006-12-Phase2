@@ -1,0 +1,2206 @@
+This file is a merged representation of a subset of the codebase, containing files not matching ignore patterns, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of a subset of the repository's contents that is considered the most important context.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching these patterns are excluded: frontend/frontend-backup/**
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+backend/
+  budget_data.csv
+  main.py
+  requirements.txt
+docs/
+  03_INFOCREON_LOCAL_CONTAINER_MIRROR (1).docx
+  ARCHITECTURE_REVIEW.md
+frontend/
+  public/
+    file.svg
+    globe.svg
+    next.svg
+    vercel.svg
+    window.svg
+  src/
+    app/
+      favicon.ico
+      globals.css
+      layout.tsx
+      page.tsx
+  .gitignore
+  AGENTS.md
+  eslint.config.mjs
+  next.config.ts
+  package.json
+  README.md
+  tsconfig.json
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="backend/budget_data.csv">
+cost_centre,department,account_category,month,budget_amount,actual_amount,committed_amount,forecast_amount
+CC-101,Engineering,Cloud Infrastructure,Jan 2026,45000,48000,2000,50000
+CC-101,Engineering,Cloud Infrastructure,Feb 2026,45000,49500,1500,51000
+CC-101,Engineering,Cloud Infrastructure,Mar 2026,45000,52000,3000,53500
+CC-102,Engineering,Software Licenses,Jan 2026,20000,18500,1000,19000
+CC-102,Engineering,Software Licenses,Feb 2026,20000,19000,1000,19500
+CC-102,Engineering,Software Licenses,Mar 2026,20000,21000,500,21500
+CC-201,Marketing,Paid Ads & Campaigns,Jan 2026,60000,68000,5000,70000
+CC-201,Marketing,Paid Ads & Campaigns,Feb 2026,60000,58000,4000,62000
+CC-201,Marketing,Paid Ads & Campaigns,Mar 2026,65000,72000,8000,75000
+CC-202,Marketing,Events & PR,Jan 2026,30000,25000,2000,28000
+CC-202,Marketing,Events & PR,Feb 2026,30000,34000,1000,35000
+CC-202,Marketing,Events & PR,Mar 2026,35000,31000,3000,34000
+CC-301,Sales,Travel & Client Entertainment,Jan 2026,25000,29000,1500,30000
+CC-301,Sales,Travel & Client Entertainment,Feb 2026,25000,27500,2000,28000
+CC-301,Sales,Travel & Client Entertainment,Mar 2026,28000,32000,2500,33000
+CC-401,HR & Ops,Recruitment & Onboarding,Jan 2026,15000,12000,500,13000
+CC-401,HR & Ops,Recruitment & Onboarding,Feb 2026,15000,14500,1000,15000
+CC-401,HR & Ops,Recruitment & Onboarding,Mar 2026,18000,22000,3000,23000
+</file>
+
+<file path="backend/main.py">
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+import duckdb
+import pandas as pd
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI(
+    title="Budget vs Actual Variance Navigator API",
+    version="2.0.0",
+    description="Financial performance and budget variance analytics API",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["GET"],
+    allow_headers=["*"],
+)
+
+DATA_FILE = Path(__file__).resolve().parent / "budget_data.csv"
+
+REQUIRED_COLUMNS = {
+    "cost_centre",
+    "department",
+    "account_category",
+    "month",
+    "budget_amount",
+    "actual_amount",
+    "committed_amount",
+    "forecast_amount",
+}
+
+AMOUNT_COLUMNS = [
+    "budget_amount",
+    "actual_amount",
+    "committed_amount",
+    "forecast_amount",
+]
+
+GROUPING_COLUMNS = [
+    "department",
+    "month",
+    "cost_centre",
+    "account_category",
+]
+
+
+def load_data() -> pd.DataFrame:
+    """Load and validate the financial CSV dataset."""
+    try:
+        df = pd.read_csv(DATA_FILE)
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="Financial dataset was not found.",
+        ) from exc
+    except (OSError, pd.errors.ParserError) as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to read the financial dataset.",
+        ) from exc
+
+    missing = REQUIRED_COLUMNS.difference(df.columns)
+    if missing:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Dataset is missing columns: {sorted(missing)}",
+        )
+
+    if df.empty:
+        raise HTTPException(
+            status_code=500,
+            detail="Financial dataset contains no records.",
+        )
+
+    for column in AMOUNT_COLUMNS:
+        df[column] = pd.to_numeric(df[column], errors="coerce")
+
+    if df[AMOUNT_COLUMNS].isna().any().any():
+        raise HTTPException(
+            status_code=500,
+            detail="Dataset contains missing or invalid financial amounts.",
+        )
+
+    if (df[AMOUNT_COLUMNS] < 0).any().any():
+        raise HTTPException(
+            status_code=500,
+            detail="Dataset contains negative financial amounts.",
+        )
+
+    if df[GROUPING_COLUMNS].isna().any().any():
+        raise HTTPException(
+            status_code=500,
+            detail="Dataset contains missing grouping information.",
+        )
+
+    return df
+
+
+def get_month_date(month: str) -> datetime:
+    """Convert month labels such as Jan 2026 into sortable dates."""
+    try:
+        return datetime.strptime(month, "%b %Y")
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Invalid month label in dataset: {month}",
+        ) from exc
+
+
+def money(value: Any) -> float:
+    """Return a rounded numeric value for API responses."""
+    return round(float(value), 2)
+
+
+def apply_filters(
+    df: pd.DataFrame,
+    department: str | None = None,
+    month: str | None = None,
+) -> pd.DataFrame:
+    """Validate and apply the shared dashboard filters."""
+
+    if department:
+        available_departments = df["department"].unique().tolist()
+
+        if department not in available_departments:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "message": "Unknown department filter.",
+                    "available_departments": sorted(available_departments),
+                },
+            )
+
+        df = df[df["department"] == department]
+
+    if month:
+        available_months = df["month"].unique().tolist()
+
+        if month not in available_months:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "message": "Unknown month filter.",
+                    "available_months": sorted(
+                        available_months,
+                        key=get_month_date,
+                    ),
+                },
+            )
+
+        df = df[df["month"] == month]
+
+    return df
+
+
+def sort_monthly_results(result: list[dict]) -> list[dict]:
+    """Sort monthly results chronologically."""
+    return sorted(
+        result,
+        key=lambda row: get_month_date(row["month"]),
+    )
+
+
+def round_result_fields(
+    rows: list[dict],
+    fields: list[str],
+) -> list[dict]:
+    """Round selected numeric fields in grouped API results."""
+    for row in rows:
+        for field in fields:
+            row[field] = money(row[field])
+
+    return rows
+
+
+@app.get("/api/health")
+def health_check():
+    return {
+        "status": "ok",
+        "service": "Budget vs Actual Variance Navigator",
+        "version": "2.0.0",
+    }
+
+
+@app.get("/api/summary")
+def get_summary(
+    department: str | None = Query(default=None),
+    month: str | None = Query(default=None),
+):
+    df = apply_filters(load_data(), department, month)
+
+    total_budget = df["budget_amount"].sum()
+    total_actual = df["actual_amount"].sum()
+    total_committed = df["committed_amount"].sum()
+    total_forecast = df["forecast_amount"].sum()
+
+    variance = total_actual - total_budget
+
+    variance_pct = (
+        (variance / total_budget) * 100
+        if total_budget != 0
+        else 0
+    )
+
+    status = (
+        "Over Budget" if variance > 0
+        else "Under Budget" if variance < 0
+        else "On Budget"
+    )
+
+    return {
+        "total_budget": money(total_budget),
+        "total_actual": money(total_actual),
+        "total_committed": money(total_committed),
+        "total_forecast": money(total_forecast),
+        "variance": money(variance),
+        "variance_pct": money(variance_pct),
+        "status": status,
+        "record_count": int(len(df)),
+        "department_count": int(df["department"].nunique()),
+    }
+
+
+@app.get("/api/waterfall")
+def get_waterfall(
+    department: str | None = Query(default=None),
+    month: str | None = Query(default=None),
+):
+    df = apply_filters(load_data(), department, month)
+
+    total_budget = df["budget_amount"].sum()
+    total_actual = df["actual_amount"].sum()
+
+    grouped = (
+        df.groupby("department")
+        .agg(
+            budget=("budget_amount", "sum"),
+            actual=("actual_amount", "sum"),
+        )
+        .reset_index()
+    )
+
+    grouped["variance"] = grouped["actual"] - grouped["budget"]
+    grouped = grouped.sort_values("department")
+
+    waterfall_items = [
+        {
+            "name": "Base Budget",
+            "value": money(total_budget),
+            "is_total": True,
+        }
+    ]
+
+    for _, row in grouped.iterrows():
+        waterfall_items.append(
+            {
+                "name": f"{row['department']} Variance",
+                "value": money(row["variance"]),
+                "is_total": False,
+            }
+        )
+
+    waterfall_items.append(
+        {
+            "name": "Final Actual",
+            "value": money(total_actual),
+            "is_total": True,
+        }
+    )
+
+    variance_sum = grouped["variance"].sum()
+
+    reconciles = bool(
+        abs((total_budget + variance_sum) - total_actual) < 0.01
+    )
+
+    return {
+        "waterfall": waterfall_items,
+        "reconciliation": {
+            "budget": money(total_budget),
+            "variance_sum": money(variance_sum),
+            "actual": money(total_actual),
+            "reconciles": reconciles,
+        },
+    }
+
+
+@app.get("/api/department-breakdown")
+def get_department_breakdown(
+    department: str | None = Query(default=None),
+    month: str | None = Query(default=None),
+):
+    df = apply_filters(load_data(), department, month)
+
+    with duckdb.connect() as con:
+        result = con.execute(
+            """
+            SELECT
+                department,
+                SUM(budget_amount) AS budget,
+                SUM(actual_amount) AS actual,
+                SUM(committed_amount) AS committed,
+                SUM(forecast_amount) AS forecast,
+                SUM(actual_amount - budget_amount) AS variance,
+                CASE
+                    WHEN SUM(budget_amount) = 0 THEN 0
+                    ELSE ROUND(
+                        SUM(actual_amount - budget_amount)
+                        / SUM(budget_amount) * 100,
+                        2
+                    )
+                END AS variance_pct
+            FROM df
+            GROUP BY department
+            ORDER BY variance DESC
+            """
+        ).df().to_dict(orient="records")
+
+    round_result_fields(
+        result,
+        [
+            "budget",
+            "actual",
+            "committed",
+            "forecast",
+            "variance",
+            "variance_pct",
+        ],
+    )
+
+    return {"departments": result}
+
+
+@app.get("/api/monthly-trends")
+def get_monthly_trends(
+    department: str | None = Query(default=None),
+    month: str | None = Query(default=None),
+):
+    """Return monthly financial trends with shared filters."""
+    df = apply_filters(load_data(), department, month)
+
+    with duckdb.connect() as con:
+        result = con.execute(
+            """
+            SELECT
+                month,
+                SUM(budget_amount) AS budget,
+                SUM(actual_amount) AS actual,
+                SUM(forecast_amount) AS forecast
+            FROM df
+            GROUP BY month
+            """
+        ).df().to_dict(orient="records")
+
+    result = sort_monthly_results(result)
+
+    round_result_fields(
+        result,
+        ["budget", "actual", "forecast"],
+    )
+
+    return {"trends": result}
+
+
+@app.get("/api/department-heatmap")
+def get_department_heatmap(
+    department: str | None = Query(default=None),
+    month: str | None = Query(default=None),
+):
+    df = apply_filters(load_data(), department, month)
+
+    with duckdb.connect() as con:
+        result = con.execute(
+            """
+            SELECT
+                department,
+                account_category,
+                SUM(budget_amount) AS budget,
+                SUM(actual_amount) AS actual,
+                SUM(actual_amount - budget_amount) AS variance,
+                CASE
+                    WHEN SUM(budget_amount) = 0 THEN 0
+                    ELSE ROUND(
+                        SUM(actual_amount - budget_amount)
+                        / SUM(budget_amount) * 100,
+                        2
+                    )
+                END AS variance_pct
+            FROM df
+            GROUP BY department, account_category
+            ORDER BY department, account_category
+            """
+        ).df().to_dict(orient="records")
+
+    round_result_fields(
+        result,
+        ["budget", "actual", "variance", "variance_pct"],
+    )
+
+    return {"heatmap": result}
+
+
+@app.get("/api/forecast")
+def get_forecast(
+    range_pct: float = Query(default=10.0, ge=0, le=50),
+    department: str | None = Query(default=None),
+    month: str | None = Query(default=None),
+):
+    """
+    Return an illustrative forecast range.
+
+    This is an assumption-based display range, not a statistically
+    validated confidence interval. The current dataset does not
+    contain historical forecast-error observations.
+    """
+    df = apply_filters(load_data(), department, month)
+
+    with duckdb.connect() as con:
+        result = con.execute(
+            """
+            SELECT
+                month,
+                SUM(budget_amount) AS budget,
+                SUM(actual_amount) AS actual,
+                SUM(forecast_amount) AS forecast
+            FROM df
+            GROUP BY month
+            """
+        ).df().to_dict(orient="records")
+
+    result = sort_monthly_results(result)
+
+    forecast_items = []
+
+    for row in result:
+        forecast = float(row["forecast"])
+        margin = forecast * (range_pct / 100)
+
+        forecast_items.append(
+            {
+                "month": row["month"],
+                "budget": money(row["budget"]),
+                "actual": money(row["actual"]),
+                "forecast": money(forecast),
+                "lower_bound": money(max(0, forecast - margin)),
+                "upper_bound": money(forecast + margin),
+            }
+        )
+
+    return {
+        "forecast": forecast_items,
+        "method": "Illustrative percentage-based range",
+        "range_pct": range_pct,
+        "is_statistically_validated": False,
+        "disclaimer": (
+            "The displayed range is assumption-based and is not "
+            "a statistically validated confidence interval."
+        ),
+    }
+
+
+@app.get("/api/filters")
+def get_filters():
+    df = load_data()
+
+    months = sorted(
+        df["month"].unique().tolist(),
+        key=get_month_date,
+    )
+
+    return {
+        "departments": sorted(df["department"].unique().tolist()),
+        "months": months,
+        "account_categories": sorted(
+            df["account_category"].unique().tolist()
+        ),
+        "cost_centres": sorted(df["cost_centre"].unique().tolist()),
+    }
+</file>
+
+<file path="backend/requirements.txt">
+fastapi==0.110.0
+uvicorn==0.28.0
+pandas==2.2.1
+duckdb==0.10.1
+pydantic==2.6.4
+</file>
+
+<file path="docs/ARCHITECTURE_REVIEW.md">
+\# ARCHITECTURE REVIEW
+
+\## PoC-4: Budget vs Actual Variance Navigator
+
+
+
+\*\*Project:\*\* Real Rails Interns Batch 8  
+
+\*\*Organization:\*\* Infocreon Internship  
+
+\*\*Repository:\*\* Budget vs Actual Variance Navigator  
+
+\*\*Branch:\*\* `rebuild/full-stack-poc4`  
+
+\*\*Document Status:\*\* Architecture Review Draft
+
+
+
+\---
+
+
+
+\## 1. Objective
+
+
+
+The objective of this project is to build a Budget vs Actual Variance Navigator that helps business users understand financial performance across departments, cost centres, account categories, and months.
+
+
+
+The application will identify budget deviations, highlight areas of overspending and underspending, and provide useful financial insights to support decision-making.
+
+
+
+The implementation will follow the official PoC-4 requirements before the separate cinematic design phase.
+
+
+
+\## 2. Existing Project Assessment
+
+
+
+The current repository contains:
+
+
+
+\### Backend
+
+\- Python
+
+\- FastAPI
+
+\- Pandas
+
+\- DuckDB
+
+\- CSV-based synthetic financial dataset
+
+
+
+Existing API endpoints:
+
+\- `/api/health`
+
+\- `/api/summary`
+
+\- `/api/waterfall`
+
+\- `/api/department-breakdown`
+
+\- `/api/monthly-trends`
+
+
+
+\### Frontend
+
+\- Next.js
+
+\- React
+
+\- TypeScript
+
+\- Existing dashboard page and styling
+
+
+
+\### Dataset
+
+The current dataset contains synthetic financial records for January–March 2026.
+
+
+
+Verified dataset totals:
+
+
+
+| Metric | Amount |
+
+|---|---:|
+
+| Total Budget | $601,000 |
+
+| Total Actual | $633,000 |
+
+| Total Committed | $42,500 |
+
+| Total Forecast | $660,500 |
+
+| Total Variance | +$32,000 |
+
+| Variance Percentage | +5.32% |
+
+
+
+These figures are based on the current CSV dataset and must be calculated from the source data rather than hardcoded in the frontend.
+
+
+
+\## 3. Target Architecture
+
+
+
+\### Frontend
+
+\- Next.js
+
+\- React
+
+\- TypeScript
+
+\- Tailwind CSS
+
+\- Reusable dashboard components
+
+\- API integration
+
+\- Responsive layouts
+
+
+
+\### Backend
+
+\- Python
+
+\- FastAPI
+
+\- Pandas
+
+\- DuckDB
+
+\- Data validation and calculation services
+
+
+
+\### Data
+
+\- CSV-based synthetic financial dataset
+
+\- Consistent financial calculation rules
+
+\- Data validation before calculations
+
+
+
+The existing repository will be improved and reorganized where necessary. Verified existing functionality may be reused.
+
+
+
+\## 4. Required Dashboard Visualizations
+
+
+
+The dashboard must implement all four required visualizations.
+
+
+
+\### 4.1 Variance Waterfall
+
+Show how department-level budget variances contribute to the overall difference between budget and actual spending.
+
+
+
+\### 4.2 Monthly Trend
+
+Compare budget, actual, and forecast amounts over time.
+
+
+
+\### 4.3 Department Heatmap
+
+Highlight department-level financial performance and variance patterns.
+
+
+
+\### 4.4 Forecast Confidence Band
+
+Display forecast values with an illustrative range.
+
+
+
+\*\*Important limitation:\*\* The current dataset contains only three months of records and does not contain historical forecast-error observations. Therefore, the initial confidence band will be an illustrative forecast range based on documented assumptions, not a statistically validated confidence interval.
+
+
+
+\## 5. Proposed API Design
+
+
+
+Existing endpoints will be reviewed and improved.
+
+
+
+| Endpoint | Purpose |
+
+|---|---|
+
+| `/api/health` | Backend health check |
+
+| `/api/summary` | Overall financial KPIs |
+
+| `/api/waterfall` | Variance waterfall data |
+
+| `/api/department-breakdown` | Department financial comparison |
+
+| `/api/monthly-trends` | Monthly budget, actual, and forecast |
+
+| `/api/department-heatmap` | Department heatmap data |
+
+| `/api/forecast` | Forecast values and illustrative range |
+
+
+
+The new endpoints are proposed additions, not existing functionality.
+
+
+
+\## 6. Financial Calculation Rules
+
+
+
+The application will follow consistent financial calculations.
+
+
+
+\*\*Variance:\*\*
+
+
+
+`Actual - Budget`
+
+
+
+\*\*Variance Percentage:\*\*
+
+
+
+`(Variance / Budget) × 100`
+
+
+
+\*\*Financial interpretation:\*\*
+
+\- Positive variance: Over budget.
+
+\- Negative variance: Under budget.
+
+\- Zero variance: On budget.
+
+
+
+Additional rules:
+
+\- Handle zero-budget cases safely.
+
+\- Keep committed amounts separate from actual spending.
+
+\- Calculate dashboard figures from the dataset or backend API.
+
+\- Avoid inconsistent or hardcoded financial figures.
+
+\- Ensure waterfall calculations reconcile with overall financial totals.
+
+
+
+\## 7. Quality and Testing Strategy
+
+
+
+\### Backend Testing
+
+\- Health endpoint validation.
+
+\- Summary calculation validation.
+
+\- Variance calculation validation.
+
+\- Department aggregation validation.
+
+\- Monthly trend validation.
+
+\- Waterfall reconciliation.
+
+\- Forecast range validation.
+
+\- Invalid or missing data handling.
+
+
+
+\### Frontend Testing
+
+\- API integration.
+
+\- Correct KPI rendering.
+
+\- Chart data accuracy.
+
+\- Filter behavior.
+
+\- Loading and error states.
+
+\- Responsive layout.
+
+\- Navigation and interaction testing.
+
+
+
+\## 8. Proposed Implementation Structure
+
+
+
+The following is the proposed target structure. It is not a description of the current repository.
+
+
+
+```text
+
+project/
+
+├── backend/
+
+│   ├── main.py
+
+│   ├── budget\_data.csv
+
+│   ├── services/
+
+│   ├── tests/
+
+│   └── requirements.txt
+
+├── frontend/
+
+│   ├── src/
+
+│   │   ├── app/
+
+│   │   ├── components/
+
+│   │   ├── lib/
+
+│   │   └── types/
+
+│   └── package.json
+
+├── docs/
+
+│   ├── ARCHITECTURE\_REVIEW.md
+
+│   ├── VAR\_REPORT.md
+
+│   └── UAT\_CHECKLIST.md
+
+└── README.md
+
+```
+
+
+
+\## 9. Design Direction
+
+
+
+The first implementation phase will prioritize:
+
+\- Functional dashboard behavior.
+
+\- Accurate financial calculations.
+
+\- Complete API integration.
+
+\- Required visualizations.
+
+\- Responsive behavior.
+
+\- Meaningful financial insights.
+
+
+
+The separate cinematic design phase will follow core implementation and validation.
+
+
+
+\## 10. Implementation Phases
+
+
+
+1\. Review and approve architecture.
+
+2\. Prepare backend data and calculation services.
+
+3\. Implement and test required API endpoints.
+
+4\. Build frontend components and API integration.
+
+5\. Implement all four required visualizations.
+
+6\. Verify calculations and interactions.
+
+7\. Complete the separate cinematic design phase.
+
+8\. Perform VAR.
+
+9\. Perform UAT.
+
+10\. Prepare submission materials.
+
+
+
+\## 11. Official Execution Protocol
+
+
+
+The project will follow the required execution protocol:
+
+
+
+`Repomix → AI Handshake → Architecture Review → Implementation → VAR → UAT → Submission → Approval → Repository Handover`
+
+
+
+Each stage must be completed and verified before proceeding to the next.
+
+
+
+\---
+
+
+
+\*\*Architecture Review Status:\*\* Draft prepared for review and approval.
+
+
+
+\*\*Next Stage:\*\* Architecture approval, followed by implementation.
+</file>
+
+<file path="frontend/public/file.svg">
+<svg fill="none" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><path d="M14.5 13.5V5.41a1 1 0 0 0-.3-.7L9.8.29A1 1 0 0 0 9.08 0H1.5v13.5A2.5 2.5 0 0 0 4 16h8a2.5 2.5 0 0 0 2.5-2.5m-1.5 0v-7H8v-5H3v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1M9.5 5V2.12L12.38 5zM5.13 5h-.62v1.25h2.12V5zm-.62 3h7.12v1.25H4.5zm.62 3h-.62v1.25h7.12V11z" clip-rule="evenodd" fill="#666" fill-rule="evenodd"/></svg>
+</file>
+
+<file path="frontend/public/globe.svg">
+<svg fill="none" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><g clip-path="url(#a)"><path fill-rule="evenodd" clip-rule="evenodd" d="M10.27 14.1a6.5 6.5 0 0 0 3.67-3.45q-1.24.21-2.7.34-.31 1.83-.97 3.1M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16m.48-1.52a7 7 0 0 1-.96 0H7.5a4 4 0 0 1-.84-1.32q-.38-.89-.63-2.08a40 40 0 0 0 3.92 0q-.25 1.2-.63 2.08a4 4 0 0 1-.84 1.31zm2.94-4.76q1.66-.15 2.95-.43a7 7 0 0 0 0-2.58q-1.3-.27-2.95-.43a18 18 0 0 1 0 3.44m-1.27-3.54a17 17 0 0 1 0 3.64 39 39 0 0 1-4.3 0 17 17 0 0 1 0-3.64 39 39 0 0 1 4.3 0m1.1-1.17q1.45.13 2.69.34a6.5 6.5 0 0 0-3.67-3.44q.65 1.26.98 3.1M8.48 1.5l.01.02q.41.37.84 1.31.38.89.63 2.08a40 40 0 0 0-3.92 0q.25-1.2.63-2.08a4 4 0 0 1 .85-1.32 7 7 0 0 1 .96 0m-2.75.4a6.5 6.5 0 0 0-3.67 3.44 29 29 0 0 1 2.7-.34q.31-1.83.97-3.1M4.58 6.28q-1.66.16-2.95.43a7 7 0 0 0 0 2.58q1.3.27 2.95.43a18 18 0 0 1 0-3.44m.17 4.71q-1.45-.12-2.69-.34a6.5 6.5 0 0 0 3.67 3.44q-.65-1.27-.98-3.1" fill="#666"/></g><defs><clipPath id="a"><path fill="#fff" d="M0 0h16v16H0z"/></clipPath></defs></svg>
+</file>
+
+<file path="frontend/public/next.svg">
+<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 394 80"><path fill="#000" d="M262 0h68.5v12.7h-27.2v66.6h-13.6V12.7H262V0ZM149 0v12.7H94v20.4h44.3v12.6H94v21h55v12.6H80.5V0h68.7zm34.3 0h-17.8l63.8 79.4h17.9l-32-39.7 32-39.6h-17.9l-23 28.6-23-28.6zm18.3 56.7-9-11-27.1 33.7h17.8l18.3-22.7z"/><path fill="#000" d="M81 79.3 17 0H0v79.3h13.6V17l50.2 62.3H81Zm252.6-.4c-1 0-1.8-.4-2.5-1s-1.1-1.6-1.1-2.6.3-1.8 1-2.5 1.6-1 2.6-1 1.8.3 2.5 1a3.4 3.4 0 0 1 .6 4.3 3.7 3.7 0 0 1-3 1.8zm23.2-33.5h6v23.3c0 2.1-.4 4-1.3 5.5a9.1 9.1 0 0 1-3.8 3.5c-1.6.8-3.5 1.3-5.7 1.3-2 0-3.7-.4-5.3-1s-2.8-1.8-3.7-3.2c-.9-1.3-1.4-3-1.4-5h6c.1.8.3 1.6.7 2.2s1 1.2 1.6 1.5c.7.4 1.5.5 2.4.5 1 0 1.8-.2 2.4-.6a4 4 0 0 0 1.6-1.8c.3-.8.5-1.8.5-3V45.5zm30.9 9.1a4.4 4.4 0 0 0-2-3.3 7.5 7.5 0 0 0-4.3-1.1c-1.3 0-2.4.2-3.3.5-.9.4-1.6 1-2 1.6a3.5 3.5 0 0 0-.3 4c.3.5.7.9 1.3 1.2l1.8 1 2 .5 3.2.8c1.3.3 2.5.7 3.7 1.2a13 13 0 0 1 3.2 1.8 8.1 8.1 0 0 1 3 6.5c0 2-.5 3.7-1.5 5.1a10 10 0 0 1-4.4 3.5c-1.8.8-4.1 1.2-6.8 1.2-2.6 0-4.9-.4-6.8-1.2-2-.8-3.4-2-4.5-3.5a10 10 0 0 1-1.7-5.6h6a5 5 0 0 0 3.5 4.6c1 .4 2.2.6 3.4.6 1.3 0 2.5-.2 3.5-.6 1-.4 1.8-1 2.4-1.7a4 4 0 0 0 .8-2.4c0-.9-.2-1.6-.7-2.2a11 11 0 0 0-2.1-1.4l-3.2-1-3.8-1c-2.8-.7-5-1.7-6.6-3.2a7.2 7.2 0 0 1-2.4-5.7 8 8 0 0 1 1.7-5 10 10 0 0 1 4.3-3.5c2-.8 4-1.2 6.4-1.2 2.3 0 4.4.4 6.2 1.2 1.8.8 3.2 2 4.3 3.4 1 1.4 1.5 3 1.5 5h-5.8z"/></svg>
+</file>
+
+<file path="frontend/public/vercel.svg">
+<svg fill="none" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1155 1000"><path d="m577.3 0 577.4 1000H0z" fill="#fff"/></svg>
+</file>
+
+<file path="frontend/public/window.svg">
+<svg fill="none" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path fill-rule="evenodd" clip-rule="evenodd" d="M1.5 2.5h13v10a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1zM0 1h16v11.5a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 0 12.5zm3.75 4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5M7 4.75a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0m1.75.75a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5" fill="#666"/></svg>
+</file>
+
+<file path="frontend/src/app/globals.css">
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+
+  --background: #080b12;
+  --foreground: #e8edf5;
+
+  --surface: #101622;
+  --surface-elevated: #151e2c;
+  --border: #263244;
+
+  --muted: #8995a8;
+  --primary: #55a6ff;
+  --success: #35c995;
+  --danger: #ff6b78;
+  --warning: #f5bd62;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
+  background: var(--background);
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+::selection {
+  background: rgba(85, 166, 255, 0.28);
+  color: #ffffff;
+}
+</file>
+
+<file path="frontend/src/app/layout.tsx">
+import type { Metadata } from "next";
+import { Geist, Geist_Mono } from "next/font/google";
+import "./globals.css";
+
+const geistSans = Geist({
+  variable: "--font-geist-sans",
+  subsets: ["latin"],
+});
+
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
+  subsets: ["latin"],
+});
+
+export const metadata: Metadata = {
+  title: "Budget vs Actual Variance Navigator | Infocreon",
+  description:
+    "An interactive financial intelligence dashboard for budget tracking, variance analysis, departmental performance, and forecasting.",
+};
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  return (
+    <html
+      lang="en"
+      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+    >
+      <body className="min-h-full flex flex-col">{children}</body>
+    </html>
+  );
+}
+</file>
+
+<file path="frontend/src/app/page.tsx">
+'use client';
+
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  LineChart,
+  Line,
+  AreaChart,
+  Area,
+  Cell,
+} from 'recharts';
+
+type Row = Record<string, any>;
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+
+const money = (value: number) =>
+  new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 0,
+  }).format(Number.isFinite(value) ? value : 0);
+
+const number = (value: any) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const field = (row: Row, ...keys: string[]) => {
+  for (const key of keys) {
+    if (row?.[key] !== undefined && row[key] !== null) return row[key];
+  }
+  return undefined;
+};
+
+const rowsFrom = (data: any, ...keys: string[]): Row[] => {
+  if (Array.isArray(data)) return data;
+  for (const key of keys) {
+    if (Array.isArray(data?.[key])) return data[key];
+  }
+  return [];
+};
+
+const formatMonth = (value: string) => {
+  const date = new Date(`${value} 1`);
+  return Number.isNaN(date.getTime())
+    ? value
+    : date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+};
+
+const panel =
+  'rounded-2xl border border-[#343044] bg-[#11101a]/90 p-5 shadow-[0_18px_55px_rgba(0,0,0,0.22)]';
+const chartColor = {
+  grid: '#302c3d',
+  tick: '#a6a0b5',
+  budget: '#8b9bb4',
+  actual: '#e58b9b',
+  forecast: '#b7a4ef',
+  accent: '#a99ae8',
+};
+
+function SectionHeading({
+  eyebrow,
+  title,
+  description,
+}: {
+  eyebrow?: string;
+  title: string;
+  description?: string;
+}) {
+  return (
+    <div className="mb-5">
+      {eyebrow && (
+        <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-violet-300/80">
+          {eyebrow}
+        </p>
+      )}
+      <h2 className="text-base font-semibold tracking-wide text-[#f1edf8]">
+        {title}
+      </h2>
+      {description && (
+        <p className="mt-1.5 text-xs leading-relaxed text-[#9e98ad]">
+          {description}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function MetricCard({
+  label,
+  value,
+  detail,
+  tone = 'neutral',
+  onClick,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  tone?: 'neutral' | 'positive' | 'negative' | 'violet';
+  onClick: () => void;
+}) {
+  const toneClass = {
+    neutral: 'text-[#f2eef8]',
+    positive: 'text-emerald-300',
+    negative: 'text-rose-300',
+    violet: 'text-violet-200',
+  }[tone];
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group min-w-0 rounded-2xl border border-[#393448] bg-gradient-to-br from-[#1b1927] to-[#12111a] p-5 text-left transition duration-200 hover:-translate-y-0.5 hover:border-violet-300/40 hover:shadow-[0_14px_35px_rgba(0,0,0,0.25)]"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.17em] text-[#a49db3]">
+          {label}
+        </p>
+        <span className="h-1.5 w-1.5 rounded-full bg-violet-300/70 transition group-hover:scale-150" />
+      </div>
+      <p className={`mt-4 break-words text-2xl font-semibold tracking-tight ${toneClass}`}>
+        {value}
+      </p>
+      <p className="mt-2 text-xs text-[#8f899e]">{detail}</p>
+      <p className="mt-4 text-[10px] font-medium uppercase tracking-wider text-violet-300/70">
+        View insight ↗
+      </p>
+    </button>
+  );
+}
+
+function ChartTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="rounded-xl border border-[#484158] bg-[#171521] px-3 py-2 shadow-xl">
+      {label && <p className="mb-2 text-xs font-semibold text-[#eee9f6]">{label}</p>}
+      {payload.map((item: any, index: number) => (
+        <p key={index} className="text-xs" style={{ color: item.color || '#eee9f6' }}>
+          {item.name || item.dataKey}: {typeof item.value === 'number' ? money(item.value) : item.value}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+export default function DashboardPage() {
+  const [activeTab, setActiveTab] = useState('overview');
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [metadataOpen, setMetadataOpen] = useState(false);
+  const [selectedInsight, setSelectedInsight] = useState<Row | null>(null);
+
+  const [summary, setSummary] = useState<Row | null>(null);
+  const [departments, setDepartments] = useState<Row[]>([]);
+  const [monthly, setMonthly] = useState<Row[]>([]);
+  const [heatmap, setHeatmap] = useState<Row[]>([]);
+  const [forecast, setForecast] = useState<Row[]>([]);
+  const [waterfallInfo, setWaterfallInfo] = useState<Row | null>(null);
+
+  const [availableDepartments, setAvailableDepartments] = useState<string[]>([]);
+  const [availableMonths, setAvailableMonths] = useState<string[]>([]);
+  const [selectedDepartment, setSelectedDepartment] = useState('All Departments');
+  const [selectedMonth, setSelectedMonth] = useState('All Months');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const openInsight = (data?: Row, title?: string) => {
+    setSelectedInsight(data ? { ...data, _insightTitle: title || 'Selected data point' } : null);
+    setDrawerOpen(true);
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadDashboard() {
+      setLoading(true);
+      setError('');
+
+      try {
+        const params = new URLSearchParams();
+        if (selectedDepartment !== 'All Departments') {
+          params.set('department', selectedDepartment);
+        }
+        if (selectedMonth !== 'All Months') {
+          params.set('month', selectedMonth);
+        }
+        const filterQuery = params.toString() ? `?${params.toString()}` : '';
+        const forecastParams = new URLSearchParams(params);
+        forecastParams.set('range_pct', '10');
+
+        const urls = [
+          `${API_URL}/api/summary${filterQuery}`,
+          `${API_URL}/api/department-breakdown${filterQuery}`,
+          `${API_URL}/api/monthly-trends${filterQuery}`,
+          `${API_URL}/api/department-heatmap${filterQuery}`,
+          `${API_URL}/api/forecast?${forecastParams.toString()}`,
+          `${API_URL}/api/waterfall${filterQuery}`,
+          `${API_URL}/api/department-breakdown`,
+          `${API_URL}/api/monthly-trends`,
+        ];
+
+        const responses = await Promise.all(
+          urls.map((url) => fetch(url, { cache: 'no-store' }))
+        );
+
+        for (const response of responses) {
+          if (!response.ok) {
+            let message = `Backend request failed (${response.status})`;
+            try {
+              const data = await response.json();
+              if (data?.detail) {
+                message = typeof data.detail === 'string'
+                  ? data.detail
+                  : JSON.stringify(data.detail);
+              }
+            } catch {
+              // Retain the HTTP status message.
+            }
+            throw new Error(message);
+          }
+        }
+
+        const [
+          summaryData,
+          departmentData,
+          monthlyData,
+          heatmapData,
+          forecastData,
+          waterfallData,
+          allDepartmentData,
+          allMonthlyData,
+        ] = await Promise.all(responses.map((response) => response.json()));
+
+        if (cancelled) return;
+
+        setSummary(summaryData);
+        setDepartments(rowsFrom(departmentData, 'departments', 'data', 'results'));
+        setMonthly(rowsFrom(monthlyData, 'monthly_trends', 'trends', 'data', 'results'));
+        setHeatmap(rowsFrom(heatmapData, 'heatmap', 'data', 'results'));
+        setForecast(rowsFrom(forecastData, 'forecast', 'data', 'results'));
+        setWaterfallInfo(waterfallData);
+
+        const allDepartmentRows = rowsFrom(
+          allDepartmentData, 'departments', 'data', 'results'
+        );
+        setAvailableDepartments(
+          Array.from(new Set(
+            allDepartmentRows
+              .map((row) => String(field(row, 'department', 'name') || ''))
+              .filter(Boolean)
+          ))
+        );
+
+        const allMonthRows = rowsFrom(
+          allMonthlyData, 'monthly_trends', 'trends', 'data', 'results'
+        );
+        setAvailableMonths(
+          Array.from(new Set(
+            allMonthRows
+              .map((row) => String(field(row, 'month', 'period') || ''))
+              .filter(Boolean)
+          ))
+        );
+      } catch (err) {
+        if (!cancelled) {
+          console.error('Dashboard loading error:', err);
+          setError(err instanceof Error ? err.message : 'Unable to connect to the backend.');
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    loadDashboard();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedDepartment, selectedMonth]);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setMetadataOpen(false);
+        setDrawerOpen(false);
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  const budget = number(field(summary || {}, 'total_budget', 'budget_total', 'budget_amount'));
+  const actual = number(field(summary || {}, 'total_actual', 'actual_total', 'actual_amount'));
+  const committed = number(field(summary || {}, 'total_committed', 'committed_total', 'committed_amount'));
+  const forecastTotal = number(field(summary || {}, 'total_forecast', 'forecast_total', 'forecast_amount'));
+  const variance = number(field(summary || {}, 'variance', 'total_variance'));
+  const variancePct = number(field(summary || {}, 'variance_pct', 'variance_percentage'));
+  const budgetStatus = String(
+    field(summary || {}, 'status', 'budget_status') ||
+    (variance > 0 ? 'Over Budget' : 'Within Budget')
+  );
+
+  const monthlyChartData = monthly.map((row) => ({
+    ...row,
+    month: formatMonth(String(field(row, 'month', 'period') || '')),
+    budget: number(field(row, 'budget_amount', 'budget')),
+    actual: number(field(row, 'actual_amount', 'actual')),
+    forecast: number(field(row, 'forecast_amount', 'forecast')),
+  }));
+
+  const waterfallData = useMemo(() => {
+    let running = budget;
+    const steps = departments.map((row) => {
+      const amount = number(field(row, 'variance', 'variance_amount', 'total_variance'));
+      const previous = running;
+      running += amount;
+      return {
+        name: String(field(row, 'department', 'name') || 'Department'),
+        base: Math.min(previous, running),
+        change: Math.abs(amount),
+        amount,
+        total: 0,
+        color: amount > 0 ? '#df899b' : '#77c6a8',
+      };
+    });
+
+    return [
+      { name: 'Budget', base: 0, change: 0, total: budget, amount: budget, color: '#9cadd0' },
+      ...steps,
+      { name: 'Actual', base: 0, change: 0, total: actual, amount: actual, color: '#b7a4ef' },
+    ];
+  }, [budget, actual, departments]);
+
+  const forecastChartData = forecast.map((row) => {
+    const lower = number(field(row, 'lower_bound', 'lower', 'lower_forecast'));
+    const upper = number(field(row, 'upper_bound', 'upper', 'upper_forecast'));
+    return {
+      ...row,
+      month: formatMonth(String(field(row, 'month', 'period') || selectedMonth)),
+      forecast: number(field(row, 'forecast_amount', 'forecast', 'value')),
+      lower,
+      range: Math.max(0, upper - lower),
+    };
+  });
+
+  const reconciliation =
+    waterfallInfo?.reconciliation || waterfallInfo?.reconciliation_check;
+  const reconciles = typeof reconciliation === 'boolean'
+    ? reconciliation
+    : field(reconciliation || {}, 'reconciles', 'is_reconciled');
+
+  const varianceTone = variance > 0 ? 'negative' : 'positive';
+  const navItems = [
+    { id: 'overview', label: 'Overview', short: '01' },
+    { id: 'departments', label: 'Departments', short: '02' },
+    { id: 'trends', label: 'Trends', short: '03' },
+    { id: 'heatmap', label: 'Heatmap', short: '04' },
+    { id: 'forecast', label: 'Forecast', short: '05' },
+  ];
+
+  const filterLabel = [
+    selectedDepartment === 'All Departments' ? 'All departments' : selectedDepartment,
+    selectedMonth === 'All Months' ? 'All periods' : selectedMonth,
+  ].join(' / ');
+
+  return (
+    <main className="min-h-screen overflow-hidden bg-[#090810] text-[#eeeaf5]">
+      <div className="pointer-events-none fixed inset-0 -z-0 overflow-hidden">
+        <div className="absolute -right-40 -top-48 h-[520px] w-[520px] rounded-full bg-violet-500/[0.07] blur-[120px]" />
+        <div className="absolute -bottom-56 -left-40 h-[480px] w-[480px] rounded-full bg-indigo-500/[0.06] blur-[120px]" />
+        <div className="absolute inset-0 opacity-[0.12] [background-image:linear-gradient(rgba(180,170,210,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(180,170,210,0.08)_1px,transparent_1px)] [background-size:72px_72px]" />
+      </div>
+
+      <div className="relative z-10 mx-auto min-h-screen w-full max-w-[1800px]">
+        <header className="border-b border-[#302b3c] bg-[#0b0a12]/85 px-4 py-4 backdrop-blur-xl sm:px-7 lg:px-10">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-violet-300/25 bg-violet-300/[0.08] text-sm font-bold tracking-tight text-violet-200">
+                IN
+              </div>
+              <div className="min-w-0">
+                <p className="text-[9px] font-semibold uppercase tracking-[0.24em] text-violet-300">
+                  Infocreon Internship
+                </p>
+                <h1 className="mt-1 truncate text-sm font-semibold tracking-wide text-[#f2eef8] sm:text-base">
+                  Infocreon Internship - Budget vs Actual Variance Navigator
+                </h1>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="hidden rounded-full border border-[#3a3548] px-3 py-2 text-[10px] uppercase tracking-wider text-[#a49db3] sm:inline-flex">
+                PoC-4 · Batch 8
+              </span>
+              <button
+                type="button"
+                onClick={() => setMetadataOpen(true)}
+                aria-label="Open application metadata"
+                className="flex h-10 items-center gap-2 rounded-xl border border-[#464054] bg-[#171521] px-3 text-xs font-medium text-[#d9d2e5] transition hover:border-violet-300/50 hover:text-white"
+              >
+                <span className="text-violet-200">ⓘ</span>
+                <span className="hidden sm:inline">Project details</span>
+              </button>
+            </div>
+          </div>
+
+          <nav aria-label="Dashboard sections" className="mt-5 flex gap-1 overflow-x-auto border-t border-[#292536] pt-3">
+            {navItems.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setActiveTab(item.id)}
+                className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-xs transition ${
+                  activeTab === item.id
+                    ? 'bg-violet-300/[0.12] text-violet-100 ring-1 ring-inset ring-violet-300/25'
+                    : 'text-[#918a9f] hover:bg-white/[0.04] hover:text-[#e9e3f1]'
+                }`}
+              >
+                <span className="text-[9px] opacity-60">{item.short}</span>
+                {item.label}
+              </button>
+            ))}
+          </nav>
+        </header>
+
+        <div className="space-y-6 px-4 py-6 sm:px-7 lg:px-10 lg:py-8">
+          <section className="flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-violet-300/80">
+                Financial intelligence / Control room
+              </p>
+              <h2 className="mt-2 text-2xl font-semibold tracking-tight text-[#f4f0f8] sm:text-3xl">
+                {activeTab === 'overview' ? 'Financial position' : navItems.find((item) => item.id === activeTab)?.label}
+              </h2>
+              <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[#9b95a9]">
+                A focused view of budget performance, variance drivers and forecast movement.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-[#383346] bg-[#14121d]/90 p-2">
+              <span className="px-2 text-[9px] font-semibold uppercase tracking-[0.18em] text-[#8f899e]">
+                Scope
+              </span>
+              <select
+                aria-label="Filter by department"
+                value={selectedDepartment}
+                onChange={(event) => setSelectedDepartment(event.target.value)}
+                className="max-w-[180px] rounded-lg border border-[#393447] bg-[#0e0d15] px-3 py-2 text-xs text-[#e8e2f0] outline-none focus:border-violet-300/60"
+              >
+                <option>All Departments</option>
+                {availableDepartments.map((name) => <option key={name} value={name}>{name}</option>)}
+              </select>
+              <select
+                aria-label="Filter by month"
+                value={selectedMonth}
+                onChange={(event) => setSelectedMonth(event.target.value)}
+                className="max-w-[150px] rounded-lg border border-[#393447] bg-[#0e0d15] px-3 py-2 text-xs text-[#e8e2f0] outline-none focus:border-violet-300/60"
+              >
+                <option>All Months</option>
+                {availableMonths.map((month) => <option key={month} value={month}>{formatMonth(month)}</option>)}
+              </select>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedDepartment('All Departments');
+                  setSelectedMonth('All Months');
+                }}
+                className="rounded-lg px-3 py-2 text-xs text-[#aaa2b8] transition hover:bg-white/[0.06] hover:text-white"
+              >
+                Reset
+              </button>
+            </div>
+          </section>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 border-y border-[#2d2939] py-3">
+            <p className="text-[10px] uppercase tracking-[0.16em] text-[#8f899e]">
+              Active view <span className="ml-2 text-[#d8d1e3]">{filterLabel}</span>
+            </p>
+            <p className="text-[10px] uppercase tracking-[0.16em] text-[#817b8f]">
+              Demonstration dataset · Jan–Mar 2026
+            </p>
+          </div>
+
+          {loading && (
+            <div className={`${panel} flex min-h-64 flex-col items-center justify-center`}>
+              <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#464054] border-t-violet-300" />
+              <p className="mt-4 text-xs text-[#a39caf]">Synchronising financial data…</p>
+            </div>
+          )}
+
+          {!loading && error && (
+            <div className="rounded-2xl border border-rose-400/25 bg-rose-950/20 p-6">
+              <h2 className="font-semibold text-rose-200">Dashboard connection issue</h2>
+              <p className="mt-2 text-sm text-[#d0c7d4]">{error}</p>
+              <p className="mt-2 text-xs text-[#a49aaa]">Confirm that the FastAPI service is running at {API_URL}.</p>
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="mt-4 rounded-lg border border-rose-300/30 px-4 py-2 text-xs text-rose-200 hover:bg-rose-400/10"
+              >
+                Retry connection
+              </button>
+            </div>
+          )}
+
+          {!loading && !error && summary && (
+            <>
+              {activeTab === 'overview' && (
+                <>
+                  <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <MetricCard label="Approved budget" value={money(budget)} detail="Selected reporting scope" onClick={() => openInsight({ budget }, 'Approved budget')} />
+                    <MetricCard label="Actual expenditure" value={money(actual)} detail="Recorded actual spend" tone="violet" onClick={() => openInsight({ actual }, 'Actual expenditure')} />
+                    <MetricCard label="Net variance" value={`${variance > 0 ? '+' : ''}${money(variance)}`} detail={`${variancePct.toFixed(2)}% against budget`} tone={varianceTone} onClick={() => openInsight({ variance, variancePct }, 'Net variance')} />
+                    <MetricCard label="Budget status" value={budgetStatus} detail="Actual compared with budget" tone={variance > 0 ? 'negative' : 'positive'} onClick={() => openInsight({ budgetStatus, budget, actual, variance }, 'Budget status')} />
+                  </section>
+
+                  <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                    <div className={panel}>
+                      <SectionHeading eyebrow="01 / Reconciliation" title="Variance bridge" description="Budget baseline, departmental variance contributions and actual total. Select a bar to inspect its value." />
+                      <div className="h-[310px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={waterfallData} margin={{ top: 10, right: 8, left: 0, bottom: 12 }} onClick={(state: any) => {
+                            const point = state?.activePayload?.[0]?.payload;
+                            if (point) openInsight(point, `Variance bridge · ${point.name}`);
+                          }}>
+                            <CartesianGrid stroke={chartColor.grid} strokeDasharray="3 5" vertical={false} />
+                            <XAxis dataKey="name" tick={{ fill: chartColor.tick, fontSize: 10 }} angle={-12} textAnchor="end" height={55} />
+                            <YAxis tick={{ fill: chartColor.tick, fontSize: 10 }} tickFormatter={(value) => `$${Math.round(value / 1000)}k`} />
+                            <Tooltip content={<ChartTooltip />} cursor={{ fill: '#b7a4ef', fillOpacity: 0.06 }} />
+                            <Bar dataKey="base" stackId="bridge" fill="transparent" />
+                            <Bar dataKey="change" stackId="bridge" name="Variance contribution" radius={[4, 4, 0, 0]}>
+                              {waterfallData.map((entry, index) => <Cell key={index} fill={entry.color} />)}
+                            </Bar>
+                            <Bar dataKey="total" name="Budget / Actual" radius={[4, 4, 0, 0]}>
+                              {waterfallData.map((entry, index) => <Cell key={index} fill={entry.color} />)}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                      <div className="mt-2 flex items-center justify-between border-t border-[#302b3c] pt-3 text-[10px] text-[#9b95a9]">
+                        <span>Backend reconciliation</span>
+                        <span className={reconciles === undefined ? 'text-[#aaa2b8]' : reconciles ? 'text-emerald-300' : 'text-amber-300'}>
+                          {reconciles === undefined ? 'Not reported' : reconciles ? 'Passed' : 'Review required'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className={panel}>
+                      <SectionHeading eyebrow="02 / Performance" title="Monthly movement" description="Budget, actual expenditure and forecast by reporting month." />
+                      <div className="h-[310px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={monthlyChartData} onClick={(state: any) => {
+                            const point = state?.activePayload?.[0]?.payload;
+                            if (point) openInsight(point, `Monthly movement · ${point.month}`);
+                          }}>
+                            <CartesianGrid stroke={chartColor.grid} strokeDasharray="3 5" vertical={false} />
+                            <XAxis dataKey="month" tick={{ fill: chartColor.tick, fontSize: 10 }} />
+                            <YAxis tick={{ fill: chartColor.tick, fontSize: 10 }} tickFormatter={(value) => `$${Math.round(value / 1000)}k`} />
+                            <Tooltip content={<ChartTooltip />} />
+                            <Legend wrapperStyle={{ fontSize: 11, color: chartColor.tick }} />
+                            <Line type="monotone" dataKey="budget" name="Budget" stroke={chartColor.budget} strokeWidth={2} dot={{ r: 3 }} />
+                            <Line type="monotone" dataKey="actual" name="Actual" stroke={chartColor.actual} strokeWidth={2.5} dot={{ r: 3 }} />
+                            <Line type="monotone" dataKey="forecast" name="Forecast" stroke={chartColor.forecast} strokeWidth={2} strokeDasharray="5 5" dot={{ r: 3 }} />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+
+                    <div className={panel}>
+                      <SectionHeading eyebrow="03 / Drivers" title="Variance by account" description="Department and account-category variance. Select a tile to inspect its contribution." />
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        {heatmap.map((row, index) => {
+                          const department = String(field(row, 'department') || 'Department');
+                          const category = String(field(row, 'account_category', 'category') || 'Account');
+                          const amount = number(field(row, 'variance', 'variance_amount'));
+                          const pct = number(field(row, 'variance_pct', 'variance_percentage'));
+                          const adverse = amount > 0;
+                          return (
+                            <button
+                              type="button"
+                              key={`${department}-${category}-${index}`}
+                              onClick={() => openInsight(row, `${department} · ${category}`)}
+                              className={`rounded-xl border p-4 text-left transition hover:-translate-y-0.5 ${adverse ? 'border-rose-300/20 bg-rose-300/[0.06] hover:border-rose-300/40' : 'border-emerald-300/20 bg-emerald-300/[0.05] hover:border-emerald-300/40'}`}
+                            >
+                              <p className="text-xs font-semibold text-[#e9e3f0]">{department}</p>
+                              <p className="mt-1 text-[11px] text-[#9992a7]">{category}</p>
+                              <div className="mt-4 flex items-end justify-between gap-2">
+                                <span className={`text-xl font-semibold ${adverse ? 'text-rose-200' : 'text-emerald-200'}`}>{pct > 0 ? '+' : ''}{pct.toFixed(2)}%</span>
+                                <span className="text-[11px] text-[#aaa2b8]">{amount > 0 ? '+' : ''}{money(amount)}</span>
+                              </div>
+                            </button>
+                          );
+                        })}
+                        {heatmap.length === 0 && <p className="text-xs text-[#918a9f]">No heatmap records for this selection.</p>}
+                      </div>
+                    </div>
+
+                    <div className={panel}>
+                      <SectionHeading eyebrow="04 / Outlook" title="Forecast envelope" description="Forecast values with illustrative percentage-based bounds." />
+                      <div className="h-[260px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <AreaChart data={forecastChartData} onClick={(state: any) => {
+                            const point = state?.activePayload?.[0]?.payload;
+                            if (point) openInsight(point, `Forecast · ${point.month}`);
+                          }}>
+                            <CartesianGrid stroke={chartColor.grid} strokeDasharray="3 5" vertical={false} />
+                            <XAxis dataKey="month" tick={{ fill: chartColor.tick, fontSize: 10 }} />
+                            <YAxis tick={{ fill: chartColor.tick, fontSize: 10 }} tickFormatter={(value) => `$${Math.round(value / 1000)}k`} />
+                            <Tooltip content={<ChartTooltip />} />
+                            <Area dataKey="lower" stackId="range" stroke="none" fill="transparent" />
+                            <Area dataKey="range" stackId="range" name="Illustrative range" stroke="none" fill="#a99ae8" fillOpacity={0.22} />
+                            <Line dataKey="forecast" name="Forecast" stroke={chartColor.forecast} strokeWidth={2.5} dot={{ r: 3 }} />
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      </div>
+                      <p className="mt-2 rounded-xl border border-amber-300/20 bg-amber-300/[0.05] p-3 text-[11px] leading-relaxed text-amber-100/80">
+                        Illustrative percentage-based range only. It is not a statistically validated confidence interval because historical forecast-error data is unavailable.
+                      </p>
+                    </div>
+                  </section>
+                </>
+              )}
+
+              {activeTab === 'departments' && (
+                <section className={panel}>
+                  <SectionHeading eyebrow="Department performance" title="Variance breakdown" description="Actual expenditure, committed amounts and budget variance by department." />
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[680px] text-left text-xs">
+                      <thead className="border-b border-[#3a3547] text-[10px] uppercase tracking-wider text-[#a49db3]">
+                        <tr>{['Department', 'Budget', 'Actual', 'Committed', 'Variance', 'Variance %'].map((heading) => <th key={heading} className="pb-4 pr-4 font-medium">{heading}</th>)}</tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#302b3c]">
+                        {departments.map((row, index) => {
+                          const amount = number(field(row, 'variance', 'variance_amount'));
+                          return (
+                            <tr key={index} onClick={() => openInsight(row, String(field(row, 'department', 'name') || 'Department'))} className="cursor-pointer text-[#d8d1e2] transition hover:bg-white/[0.035]">
+                              <td className="py-4 pr-4 font-semibold text-white">{field(row, 'department', 'name')}</td>
+                              <td className="py-4 pr-4">{money(number(field(row, 'budget', 'budget_amount')))}</td>
+                              <td className="py-4 pr-4">{money(number(field(row, 'actual', 'actual_amount')))}</td>
+                              <td className="py-4 pr-4">{money(number(field(row, 'committed', 'committed_amount')))}</td>
+                              <td className={`py-4 pr-4 font-semibold ${amount > 0 ? 'text-rose-200' : 'text-emerald-200'}`}>{amount > 0 ? '+' : ''}{money(amount)}</td>
+                              <td className="py-4">{number(field(row, 'variance_pct', 'variance_percentage')).toFixed(2)}%</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                    {departments.length === 0 && <p className="py-8 text-center text-xs text-[#918a9f]">No department records for this selection.</p>}
+                  </div>
+                </section>
+              )}
+
+              {activeTab === 'trends' && (
+                <section className={panel}>
+                  <SectionHeading eyebrow="Time series" title="Monthly financial trends" description="Compare budget, actual expenditure and forecast for the selected scope." />
+                  <div className="h-[420px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={monthlyChartData} onClick={(state: any) => {
+                        const point = state?.activePayload?.[0]?.payload;
+                        if (point) openInsight(point, `Monthly movement · ${point.month}`);
+                      }}>
+                        <CartesianGrid stroke={chartColor.grid} strokeDasharray="3 5" />
+                        <XAxis dataKey="month" stroke={chartColor.tick} />
+                        <YAxis stroke={chartColor.tick} tickFormatter={(value) => `$${Math.round(value / 1000)}k`} />
+                        <Tooltip content={<ChartTooltip />} />
+                        <Legend />
+                        <Line dataKey="budget" name="Budget" stroke={chartColor.budget} strokeWidth={3} />
+                        <Line dataKey="actual" name="Actual" stroke={chartColor.actual} strokeWidth={3} />
+                        <Line dataKey="forecast" name="Forecast" stroke={chartColor.forecast} strokeWidth={3} strokeDasharray="5 5" />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </section>
+              )}
+
+              {activeTab === 'heatmap' && (
+                <section className={panel}>
+                  <SectionHeading eyebrow="Variance drivers" title="Department and account heatmap" description="Explore each account-category contribution within the selected reporting scope." />
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    {heatmap.map((row, index) => {
+                      const amount = number(field(row, 'variance', 'variance_amount'));
+                      const pct = number(field(row, 'variance_pct', 'variance_percentage'));
+                      return (
+                        <button type="button" key={index} onClick={() => openInsight(row, 'Account variance')} className={`rounded-xl border p-5 text-left transition hover:-translate-y-0.5 ${amount > 0 ? 'border-rose-300/20 bg-rose-300/[0.05]' : 'border-emerald-300/20 bg-emerald-300/[0.05]'}`}>
+                          <p className="text-sm font-semibold text-white">{field(row, 'department') || 'Department'}</p>
+                          <p className="mt-1 text-xs text-[#9c95aa]">{field(row, 'account_category', 'category') || 'Account category'}</p>
+                          <p className={`mt-5 text-2xl font-semibold ${amount > 0 ? 'text-rose-200' : 'text-emerald-200'}`}>{pct > 0 ? '+' : ''}{pct.toFixed(2)}%</p>
+                          <p className="mt-1 text-xs text-[#aaa2b8]">Variance: {amount > 0 ? '+' : ''}{money(amount)}</p>
+                        </button>
+                      );
+                    })}
+                    {heatmap.length === 0 && <p className="text-xs text-[#918a9f]">No heatmap records for this selection.</p>}
+                  </div>
+                </section>
+              )}
+
+              {activeTab === 'forecast' && (
+                <section className={panel}>
+                  <SectionHeading eyebrow="Planning outlook" title="Forecast analysis" description="Forecast values and assumption-based range for the selected scope." />
+                  <div className="h-[420px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={forecastChartData} onClick={(state: any) => {
+                        const point = state?.activePayload?.[0]?.payload;
+                        if (point) openInsight(point, `Forecast · ${point.month}`);
+                      }}>
+                        <CartesianGrid stroke={chartColor.grid} strokeDasharray="3 5" />
+                        <XAxis dataKey="month" stroke={chartColor.tick} />
+                        <YAxis stroke={chartColor.tick} tickFormatter={(value) => `$${Math.round(value / 1000)}k`} />
+                        <Tooltip content={<ChartTooltip />} />
+                        <Area dataKey="lower" stackId="range" stroke="none" fill="transparent" />
+                        <Area dataKey="range" stackId="range" name="Illustrative range" stroke="none" fill="#a99ae8" fillOpacity={0.25} />
+                        <Line dataKey="forecast" name="Forecast" stroke={chartColor.forecast} strokeWidth={3} />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="mt-5 rounded-xl border border-amber-300/20 bg-amber-300/[0.05] p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-amber-200">Forecast methodology disclosure</p>
+                    <p className="mt-2 text-xs leading-relaxed text-[#c9c1d0]">
+                      The displayed range is based on an illustrative percentage assumption. With only three months of records and no historical forecast-error series, it must not be interpreted as a statistically validated confidence interval.
+                    </p>
+                  </div>
+                </section>
+              )}
+
+              <footer className="flex flex-col gap-2 border-t border-[#302b3c] pt-5 text-[10px] leading-relaxed text-[#817b8f] sm:flex-row sm:items-center sm:justify-between">
+                <span>Illustrative demonstration dataset · Jan–Mar 2026 · Finance & Cash</span>
+                <span className="text-[#a69db5]">Developed by: Jona Peter · PoC ID: PoC-4 · GitHub: @jonahpeter2006-12 · Infocreon Internship</span>
+              </footer>
+            </>
+          )}
+        </div>
+      </div>
+
+      {drawerOpen && (
+        <div className="fixed inset-0 z-[80] flex justify-end bg-black/65 backdrop-blur-sm" onClick={() => setDrawerOpen(false)}>
+          <aside role="dialog" aria-modal="true" aria-label="Financial insights" onClick={(event) => event.stopPropagation()} className="flex h-full w-full max-w-md flex-col border-l border-[#484158] bg-[#12111b] p-5 shadow-2xl shadow-black/60 animate-[slideIn_0.22s_ease-out] sm:p-6">
+            <div className="flex items-start justify-between border-b border-[#383346] pb-4">
+              <div>
+                <p className="text-[9px] font-semibold uppercase tracking-[0.22em] text-violet-300">Interactive intelligence</p>
+                <h2 className="mt-2 text-lg font-semibold text-[#f0ebf6]">Financial insights</h2>
+                <p className="mt-1 text-xs text-[#9c95aa]">{selectedInsight?._insightTitle || 'Current budget position'}</p>
+              </div>
+              <button type="button" onClick={() => setDrawerOpen(false)} aria-label="Close insights panel" className="rounded-lg border border-[#403a4d] px-3 py-2 text-xs text-[#b8b0c5] hover:bg-white/[0.06]">✕</button>
+            </div>
+            <div className="flex-1 space-y-4 overflow-y-auto py-5">
+              <div className="rounded-xl border border-[#3b3549] bg-[#1a1825] p-4">
+                <p className="text-[10px] uppercase tracking-wider text-[#a49db3]">Selected budget position</p>
+                <p className={`mt-2 text-xl font-semibold ${variance > 0 ? 'text-rose-200' : 'text-emerald-200'}`}>{budgetStatus}</p>
+                <p className="mt-2 text-xs leading-relaxed text-[#c2bbce]">Actual expenditure is {money(actual)} against a budget of {money(budget)}.</p>
+                <p className="mt-3 text-[10px] text-[#918a9f]">{selectedDepartment} · {selectedMonth}</p>
+              </div>
+              {selectedInsight && (
+                <div className="rounded-xl border border-violet-300/25 bg-violet-300/[0.06] p-4">
+                  <p className="text-[10px] uppercase tracking-wider text-violet-200">Selected data point</p>
+                  <div className="mt-3 space-y-2">
+                    {Object.entries(selectedInsight)
+                      .filter(([key, value]) => !key.startsWith('_') && (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'))
+                      .slice(0, 10)
+                      .map(([key, value]) => (
+                        <div key={key} className="flex items-start justify-between gap-4 text-xs">
+                          <span className="capitalize text-[#a49db3]">{key.replaceAll('_', ' ')}</span>
+                          <strong className="max-w-[60%] break-words text-right text-[#eee8f5]">{typeof value === 'number' && /budget|actual|variance|forecast|amount|lower|upper|change|total/i.test(key) ? money(value) : String(value)}</strong>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+              <div className="rounded-xl border border-[#3b3549] bg-[#1a1825] p-4">
+                <p className="text-[10px] uppercase tracking-wider text-[#a49db3]">Variance observation</p>
+                <p className="mt-2 text-xs leading-relaxed text-[#c2bbce]">The selected variance is <strong className={variance > 0 ? 'text-rose-200' : 'text-emerald-200'}>{variance > 0 ? '+' : ''}{money(variance)}</strong> ({variancePct.toFixed(2)}%). This is calculated from the supplied budget and actual values.</p>
+              </div>
+              <div className="rounded-xl border border-[#3b3549] bg-[#1a1825] p-4">
+                <p className="text-[10px] uppercase tracking-wider text-[#a49db3]">Additional context</p>
+                <div className="mt-3 space-y-2 text-xs text-[#c2bbce]">
+                  <div className="flex justify-between"><span>Committed</span><strong>{money(committed)}</strong></div>
+                  <div className="flex justify-between"><span>Forecast</span><strong>{money(forecastTotal)}</strong></div>
+                </div>
+              </div>
+              <div className="rounded-xl border border-amber-300/20 bg-amber-300/[0.05] p-4">
+                <p className="text-[10px] uppercase tracking-wider text-amber-200">Forecast limitation</p>
+                <p className="mt-2 text-xs leading-relaxed text-[#c9c1d0]">The forecast range is illustrative and assumption-based. It is not a statistically validated confidence interval.</p>
+              </div>
+            </div>
+            <p className="border-t border-[#383346] pt-3 text-[9px] text-[#817b8f]">Select a chart point, table row or metric card to inspect its data.</p>
+          </aside>
+        </div>
+      )}
+
+      {metadataOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-4 backdrop-blur-md" onClick={() => setMetadataOpen(false)}>
+          <section role="dialog" aria-modal="true" aria-labelledby="metadata-title" onClick={(event) => event.stopPropagation()} className="w-full max-w-md rounded-2xl border border-[#484158] bg-[#15131f] p-5 shadow-2xl shadow-black/60 sm:p-6">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-[9px] font-semibold uppercase tracking-[0.22em] text-violet-300">Infocreon Internship</p>
+                <h2 id="metadata-title" className="mt-2 text-lg font-semibold">Application metadata</h2>
+              </div>
+              <button type="button" onClick={() => setMetadataOpen(false)} aria-label="Close metadata" className="rounded-lg border border-[#403a4d] px-3 py-2 text-xs text-[#b8b0c5] hover:bg-white/[0.06]">✕</button>
+            </div>
+            <div className="mt-5 space-y-4 rounded-xl border border-[#393447] bg-[#0d0c14] p-4 text-xs">
+              {[
+                ['Architect', 'Jona Peter'],
+                ['Batch', 'Batch 8'],
+                ['PoC ID', 'PoC-4'],
+                ['Project', 'Budget vs Actual Variance Navigator'],
+                ['Tech stack', 'Next.js, FastAPI, Tailwind CSS, Recharts'],
+                ['Program', 'Infocreon Internship'],
+              ].map(([label, value]) => (
+                <div key={label} className="flex items-start justify-between gap-4">
+                  <span className="text-[#928b9f]">{label}</span>
+                  <span className="max-w-[68%] text-right font-medium text-[#eee8f5]">{value}</span>
+                </div>
+              ))}
+              <div className="flex items-start justify-between gap-4 border-t border-[#302b3c] pt-4">
+                <span className="text-[#928b9f]">GitHub</span>
+                <a href="https://github.com/jonahpeter2006-12" target="_blank" rel="noreferrer" className="font-medium text-violet-200 hover:underline">@jonahpeter2006-12 ↗</a>
+              </div>
+            </div>
+            <button type="button" onClick={() => setMetadataOpen(false)} className="mt-5 w-full rounded-xl border border-violet-300/30 bg-violet-300/[0.12] px-4 py-3 text-xs font-semibold text-violet-100 transition hover:bg-violet-300/[0.2]">Close project details</button>
+          </section>
+        </div>
+      )}
+    </main>
+  );
+}
+</file>
+
+<file path="frontend/.gitignore">
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+</file>
+
+<file path="frontend/AGENTS.md">
+<!-- BEGIN:nextjs-agent-rules -->
+
+## This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->
+</file>
+
+<file path="frontend/eslint.config.mjs">
+import { defineConfig, globalIgnores } from "eslint/config";
+import nextVitals from "eslint-config-next/core-web-vitals";
+import nextTs from "eslint-config-next/typescript";
+
+const eslintConfig = defineConfig([
+  ...nextVitals,
+  ...nextTs,
+  // Override default ignores of eslint-config-next.
+  globalIgnores([
+    // Default ignores of eslint-config-next:
+    ".next/**",
+    "out/**",
+    "build/**",
+    "next-env.d.ts",
+  ]),
+]);
+
+export default eslintConfig;
+</file>
+
+<file path="frontend/next.config.ts">
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  /* config options here */
+  cacheComponents: true,
+  partialPrefetching: true,
+  turbopack: {
+    rules: {
+      "*.css": {
+        loaders: ["@tailwindcss/turbopack"],
+        as: "*.css",
+      },
+    },
+  },
+};
+
+export default nextConfig;
+</file>
+
+<file path="frontend/package.json">
+{
+  "name": "frontend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "lucide-react": "^1.64.0",
+    "next": "16.4.3",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "recharts": "^3.10.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/turbopack": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.4.3",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}
+</file>
+
+<file path="frontend/README.md">
+This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+
+## Getting Started
+
+First, run the development server:
+
+```bash
+npm run dev
+# or
+yarn dev
+# or
+pnpm dev
+# or
+bun dev
+```
+
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+
+You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+
+This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+
+## Learn More
+
+To learn more about Next.js, take a look at the following resources:
+
+- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
+- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+
+You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+
+## Deploy on Vercel
+
+The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+
+Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+</file>
+
+<file path="frontend/tsconfig.json">
+{
+  "compilerOptions": {
+    "target": "ES2017",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts",
+    "**/*.mts"
+  ],
+  "exclude": ["node_modules"]
+}
+</file>
+
+</files>

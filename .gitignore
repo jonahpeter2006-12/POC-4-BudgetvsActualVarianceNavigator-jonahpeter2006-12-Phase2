@@ -1,0 +1,24 @@
+# Python generated files
+__pycache__/
+*.py[cod]
+*.log
+.venv/
+venv/
+
+# Node.js and Next.js generated files
+node_modules/
+.next/
+out/
+build/
+coverage/
+
+# Environment and secret files
+.env
+.env.*
+!.env.example
+
+# Local backups
+frontend/frontend-backup/
+
+# Git
+.git/
