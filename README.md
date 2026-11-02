@@ -11,6 +11,21 @@ This project contains two main services:
 
 The backend reads financial data from `backend/budget_data.csv` and exposes API endpoints consumed by the frontend.
 
+## Live Cloud Deployment
+
+The application is deployed on **Render** using Docker.
+
+| Service | Live URL |
+|---|---|
+| Frontend Dashboard | https://poc4-budget-frontend.onrender.com |
+| Backend API | https://poc4-budget-backend.onrender.com |
+| Backend Health Check | https://poc4-budget-backend.onrender.com/api/health |
+| Backend Summary | https://poc4-budget-backend.onrender.com/api/summary |
+
+**Cloud deployment status:** Successfully deployed and validated.
+
+Note: Render's free services may spin down after inactivity. The first request after an idle period may take 50 seconds or more while the service wakes up.
+
 ## Project Structure
 
 ```text
@@ -125,7 +140,31 @@ The backend provides these endpoints:
 
 Docker Compose creates a shared network for the frontend and backend services.
 
-The frontend uses `http://localhost:8000` for browser-side API requests. Docker publishes backend port `8000` to the host so the browser can access it.
+For local development, the frontend uses `http://localhost:8000` for browser-side API requests. Docker publishes backend port `8000` to the host so the browser can access it.
+
+For cloud deployment, the frontend uses the `NEXT_PUBLIC_API_URL` environment variable to connect to the deployed backend.
+
+The backend CORS configuration allows requests from the deployed frontend.
+
+## Render Deployment Configuration
+
+Both services use Docker deployment on Render.
+
+| Setting | Backend | Frontend |
+|---|---|---|
+| Service name | `poc4-budget-backend` | `poc4-budget-frontend` |
+| Runtime | Docker | Docker |
+| Dockerfile path | `backend/Dockerfile` | `frontend/Dockerfile` |
+| Build context | `backend` | `frontend` |
+| Branch | `master` | `master` |
+
+Frontend environment variable:
+
+```text
+NEXT_PUBLIC_API_URL=https://poc4-budget-backend.onrender.com
+```
+
+The backend uses Render's assigned `PORT` environment variable.
 
 ## Troubleshooting
 
@@ -162,9 +201,13 @@ docker compose down
 docker compose up --build
 ```
 
+### Cloud application takes time to load
+
+Render free services may spin down after inactivity. Allow time for the service to wake up and retry.
+
 ## Current Validation Status
 
-Local Docker validation completed successfully.
+### Local Docker Validation
 
 - [x] Backend Docker image builds successfully.
 - [x] Frontend Docker image builds successfully.
@@ -178,7 +221,14 @@ Local Docker validation completed successfully.
 - [x] Containers recover after restart.
 - [x] Clean Docker rebuild succeeds.
 
-**Status:** Local Docker validation passed.
-## Documentation
+### Cloud Deployment Validation
 
-The `docs/` directory contains project documentation and the required local container guide.
+- [x] Backend deployed successfully on Render.
+- [x] Frontend deployed successfully on Render.
+- [x] Backend health endpoint responds successfully.
+- [x] Frontend connects to the deployed backend.
+- [x] Dashboard figures and charts load successfully.
+- [x] Overview tab validated.
+- [x] Departments tab validated.
+- [x] Trends tab validated.
+- [x] Heatmap tab validated
