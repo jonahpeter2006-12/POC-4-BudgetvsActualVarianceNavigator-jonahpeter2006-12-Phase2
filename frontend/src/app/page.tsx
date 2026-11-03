@@ -294,8 +294,7 @@ export default function DashboardPage() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
-
-  const budget = number(field(summary || {}, 'total_budget', 'budget_total', 'budget_amount'));
+    const budget = number(field(summary || {}, 'total_budget', 'budget_total', 'budget_amount'));
   const actual = number(field(summary || {}, 'total_actual', 'actual_total', 'actual_amount'));
   const committed = number(field(summary || {}, 'total_committed', 'committed_total', 'committed_amount'));
   const forecastTotal = number(field(summary || {}, 'total_forecast', 'forecast_total', 'forecast_amount'));
@@ -525,20 +524,73 @@ export default function DashboardPage() {
                       <SectionHeading eyebrow="01 / Reconciliation" title="Variance bridge" description="Budget baseline, departmental variance contributions and actual total. Select a bar to inspect its value." />
                       <div className="h-[310px]">
                         <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={waterfallData} margin={{ top: 10, right: 8, left: 0, bottom: 12 }} onClick={(state: any) => {
-                            const point = state?.activePayload?.[0]?.payload;
-                            if (point) openInsight(point, `Variance bridge · ${point.name}`);
-                          }}>
-                            <CartesianGrid stroke={chartColor.grid} strokeDasharray="3 5" vertical={false} />
-                            <XAxis dataKey="name" tick={{ fill: chartColor.tick, fontSize: 10 }} angle={-12} textAnchor="end" height={55} />
-                            <YAxis tick={{ fill: chartColor.tick, fontSize: 10 }} tickFormatter={(value) => `$${Math.round(value / 1000)}k`} />
-                            <Tooltip content={<ChartTooltip />} cursor={{ fill: '#b7a4ef', fillOpacity: 0.06 }} />
-                            <Bar dataKey="base" stackId="bridge" fill="transparent" />
-                            <Bar dataKey="change" stackId="bridge" name="Variance contribution" radius={[4, 4, 0, 0]}>
-                              {waterfallData.map((entry, index) => <Cell key={index} fill={entry.color} />)}
+                          <BarChart
+                            data={waterfallData}
+                            margin={{ top: 10, right: 8, left: 0, bottom: 12 }}
+                          >
+                            <CartesianGrid
+                              stroke={chartColor.grid}
+                              strokeDasharray="3 5"
+                              vertical={false}
+                            />
+                            <XAxis
+                              dataKey="name"
+                              tick={{ fill: chartColor.tick, fontSize: 10 }}
+                              angle={-12}
+                              textAnchor="end"
+                              height={55}
+                            />
+                            <YAxis
+                              tick={{ fill: chartColor.tick, fontSize: 10 }}
+                              tickFormatter={(value) => `$${Math.round(value / 1000)}k`}
+                            />
+                            <Tooltip
+                              content={<ChartTooltip />}
+                              cursor={{ fill: '#b7a4ef', fillOpacity: 0.06 }}
+                            />
+                            <Bar
+                              dataKey="base"
+                              stackId="bridge"
+                              fill="transparent"
+                            />
+                            <Bar
+                              dataKey="change"
+                              stackId="bridge"
+                              name="Variance contribution"
+                              radius={[4, 4, 0, 0]}
+                              cursor="pointer"
+                              onClick={(data: any) => {
+                                const point = data?.payload ?? data;
+                                if (point) {
+                                  openInsight(
+                                    point,
+                                    `Variance bridge · ${point.name}`
+                                  );
+                                }
+                              }}
+                            >
+                              {waterfallData.map((entry, index) => (
+                                <Cell key={index} fill={entry.color} />
+                              ))}
                             </Bar>
-                            <Bar dataKey="total" name="Budget / Actual" radius={[4, 4, 0, 0]}>
-                              {waterfallData.map((entry, index) => <Cell key={index} fill={entry.color} />)}
+                            <Bar
+                              dataKey="total"
+                              name="Budget / Actual"
+                              radius={[4, 4, 0, 0]}
+                              cursor="pointer"
+                              onClick={(data: any) => {
+                                const point = data?.payload ?? data;
+                                if (point) {
+                                  openInsight(
+                                    point,
+                                    `Variance bridge · ${point.name}`
+                                  );
+                                }
+                              }}
+                            >
+                              {waterfallData.map((entry, index) => (
+                                <Cell key={index} fill={entry.color} />
+                              ))}
                             </Bar>
                           </BarChart>
                         </ResponsiveContainer>
@@ -550,8 +602,7 @@ export default function DashboardPage() {
                         </span>
                       </div>
                     </div>
-
-                    <div className={panel}>
+                                        <div className={panel}>
                       <SectionHeading eyebrow="02 / Performance" title="Monthly movement" description="Budget, actual expenditure and forecast by reporting month." />
                       <div className="h-[310px]">
                         <ResponsiveContainer width="100%" height="100%">
@@ -727,8 +778,7 @@ export default function DashboardPage() {
                   </div>
                 </section>
               )}
-
-              <footer className="flex flex-col gap-2 border-t border-[#302b3c] pt-5 text-[10px] leading-relaxed text-[#817b8f] sm:flex-row sm:items-center sm:justify-between">
+                            <footer className="flex flex-col gap-2 border-t border-[#302b3c] pt-5 text-[10px] leading-relaxed text-[#817b8f] sm:flex-row sm:items-center sm:justify-between">
                 <span>Illustrative demonstration dataset · Jan–Mar 2026 · Finance & Cash</span>
                 <span className="text-[#a69db5]">Developed by: Jona Peter · PoC ID: PoC-4 · GitHub: @jonahpeter2006-12 · Infocreon Internship</span>
               </footer>
